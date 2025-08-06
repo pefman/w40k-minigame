@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>W40K Minigame</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #111; color: #eee; }
+    h1 { color: #0ff; }
+    select, button { margin: 5px 0; padding: 5px; }
+    label { display: block; margin-top: 15px; font-weight: bold; }
+    .result { margin-top: 20px; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <h1>🔥 W40K Minigame</h1>
+
+  <label for="attackerFaction">Attacker Faction:</label>
+  <select id="attackerFaction"></select>
+
+  <label for="attackerUnit">Attacker Unit:</label>
+  <select id="attackerUnit"></select>
+
+  <label for="defenderFaction">Defender Faction:</label>
+  <select id="defenderFaction"></select>
+
+  <label for="defenderUnit">Defender Unit:</label>
+  <select id="defenderUnit"></select>
+
+  <label>Battle Type:</label>
+  <select id="battleType">
+    <option value="ranged">Ranged</option>
+    <option value="melee">Melee</option>
+  </select>
+
+  <br>
+  <button onclick="simulateBattle()">⚔️ Simulate Battle</button>
+
+  <div class="result" id="result"></div>
+<script>
+  const apiBase = "";
+
+  function normalize(s) {
+    return s.toLowerCase()
+      .replace(/['"]/g, '')
+      .replace(/[ /]/g, '-');
+  }
+
+  async function fetchFactions() {
+    const res = await fetch(`${apiBase}/factions`);
+    return await res.json();
+  }
+
+  async function fetchUnits(faction) {
+    const res = await fetch(`${apiBase}/units?faction=${faction}`);
+    return await res.json();
+  }
+
+  async function populateFactions() {
+    const factions = await fetchFactions();
+
+    for (const id of ["attackerFaction", "defenderFaction"]) {
+      const select = document.getElementById(id);
+      select.innerHTML = "";
+      factions.forEach(f => {
+        const opt = document.createElement("option");
+        opt.value = normalize(f);
+        opt.textContent = f;
+        select.appendChild(opt);
+      });
+    }
+
+    await populateUnits("attackerFaction", "attackerUnit");
+    await populateUnits("defenderFaction", "defenderUnit");
+  }
+
+  async function populateUnits(factionId, unitId) {
+    const factionValue = document.getElementById(factionId).value;
+    const units = await fetchUnits(factionValue);
+
+    const select = document.getElementById(unitId);
+    select.innerHTML = "";
+    units.forEach(u => {
+      const opt = document.createElement("option");
+      opt.value = u.name;
+      opt.textContent = `${u.name} (W:${u.wounds}, T:${u.toughness})`;
+      select.appendChild(opt);
+    });
+  }
+
+  async function simulateBattle() {
+    const attacker = document.getElementById("attackerUnit").value;
+    const defender = document.getElementById("defenderUnit").value;
+    const type = document.getElementById("battleType").value;
+
+    const res = await fetch(`${apiBase}/battle`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ attacker, defender, type })
+    });
+
+    const data = await res.json();
+    document.getElementById("result").textContent = data.result || "Battle failed.";
+  }
+
+  document.getElementById("attackerFaction").addEventListener("change", () =>
+    populateUnits("attackerFaction", "attackerUnit"));
+  document.getElementById("defenderFaction").addEventListener("change", () =>
+    populateUnits("defenderFaction", "defenderUnit"));
+
+  populateFactions();
+</script>
+
+</body>
+</html>
