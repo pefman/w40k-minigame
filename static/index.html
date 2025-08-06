@@ -157,6 +157,19 @@
         .replace(/[ /]/g, '-');
     }
 
+    function getQueryParam(name) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(name);
+    }
+
+    function setQueryParam(name, value) {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (value) urlParams.set(name, value);
+      else urlParams.delete(name);
+      const newurl = window.location.pathname + '?' + urlParams.toString();
+      window.history.replaceState(null, '', newurl);
+    }
+
     async function fetchFactions() {
       const res = await fetch(`${apiBase}/factions`);
       return await res.json();
@@ -240,46 +253,28 @@
       renderWeaponCheckboxes(weaponsContainerId, weapons, selectedWeapons);
     }
 
-    function parseUrlSelections() {
-      const pathParts = window.location.pathname.split('/').filter(Boolean);
+    async function initFromUrl() {
+      const attackerFaction = getQueryParam('af') || null;
+      const attackerUnit = getQueryParam('au') || null;
+      const attackerWeapons = getQueryParam('aw') ? decodeURIComponent(getQueryParam('aw')).split(',') : [];
+      const attackerCount = parseInt(getQueryParam('ac')) || 1;
 
-      const attackerIndex = pathParts.indexOf('attacker');
-      const defenderIndex = pathParts.indexOf('defender');
+      const defenderFaction = getQueryParam('df') || null;
+      const defenderUnit = getQueryParam('du') || null;
+      const defenderWeapons = getQueryParam('dw') ? decodeURIComponent(getQueryParam('dw')).split(',') : [];
+      const defenderCount = parseInt(getQueryParam('dc')) || 1;
 
-      let selections = {
-        attackerFaction: null,
-        attackerUnit: null,
-        attackerWeapons: [],
-        attackerCount: 1,
-        defenderFaction: null,
-        defenderUnit: null,
-        defenderWeapons: [],
-        defenderCount: 1,
-      };
+      if (attackerFaction) document.getElementById('attackerFaction').value = attackerFaction;
+      await populateUnitsForFaction('attackerFaction', 'attackerUnit');
+      if (attackerUnit) document.getElementById('attackerUnit').value = attackerUnit;
+      document.getElementById('attackerCount').value = attackerCount;
+      await populateWeaponsForUnit('attackerFaction', 'attackerUnit', 'attackerWeaponsContainer', attackerWeapons);
 
-      if (attackerIndex !== -1 && pathParts.length > attackerIndex + 2) {
-        selections.attackerFaction = pathParts[attackerIndex + 1];
-        selections.attackerUnit = pathParts[attackerIndex + 2];
-        if (pathParts.length > attackerIndex + 3) {
-          const weaponsCountPart = pathParts[attackerIndex + 3].split('?')[0]; // strip query params if any
-          const [weaponsPart, countPart] = weaponsCountPart.split('|');
-          selections.attackerWeapons = weaponsPart ? weaponsPart.split(',').map(decodeURIComponent) : [];
-          if(countPart) selections.attackerCount = parseInt(countPart) || 1;
-        }
-      }
-
-      if (defenderIndex !== -1 && pathParts.length > defenderIndex + 2) {
-        selections.defenderFaction = pathParts[defenderIndex + 1];
-        selections.defenderUnit = pathParts[defenderIndex + 2];
-        if (pathParts.length > defenderIndex + 3) {
-          const weaponsCountPart = pathParts[defenderIndex + 3].split('?')[0];
-          const [weaponsPart, countPart] = weaponsCountPart.split('|');
-          selections.defenderWeapons = weaponsPart ? weaponsPart.split(',').map(decodeURIComponent) : [];
-          if(countPart) selections.defenderCount = parseInt(countPart) || 1;
-        }
-      }
-
-      return selections;
+      if (defenderFaction) document.getElementById('defenderFaction').value = defenderFaction;
+      await populateUnitsForFaction('defenderFaction', 'defenderUnit');
+      if (defenderUnit) document.getElementById('defenderUnit').value = defenderUnit;
+      document.getElementById('defenderCount').value = defenderCount;
+      await populateWeaponsForUnit('defenderFaction', 'defenderUnit', 'defenderWeaponsContainer', defenderWeapons);
     }
 
     function buildUrl() {
@@ -293,20 +288,23 @@
       const defenderWeapons = Array.from(document.querySelectorAll("#defenderWeaponsContainer input[type=checkbox]:checked")).map(cb => encodeURIComponent(cb.value)).join(',');
       const defenderCount = document.getElementById('defenderCount').value || '1';
 
-      let path = `/static/attacker/${attackerFaction}/${attackerUnit}`;
-      if (attackerWeapons) path += `/${attackerWeapons}|${attackerCount}`;
-      else path += `|${attackerCount}`;
+      const params = new URLSearchParams();
+      params.set('af', attackerFaction);
+      params.set('au', attackerUnit);
+      if(attackerWeapons) params.set('aw', attackerWeapons);
+      params.set('ac', attackerCount);
 
-      path += `/defender/${defenderFaction}/${defenderUnit}`;
-      if (defenderWeapons) path += `/${defenderWeapons}|${defenderCount}`;
-      else path += `|${defenderCount}`;
+      params.set('df', defenderFaction);
+      params.set('du', defenderUnit);
+      if(defenderWeapons) params.set('dw', defenderWeapons);
+      params.set('dc', defenderCount);
 
-      return path;
+      return `/static/?${params.toString()}`;
     }
 
     function updateUrl() {
-      const newPath = buildUrl();
-      window.history.replaceState(null, '', newPath);
+      const newUrl = buildUrl();
+      window.history.replaceState(null, '', newUrl);
     }
 
     async function populateFactions() {
@@ -322,30 +320,6 @@
           select.appendChild(opt);
         });
       }
-    }
-
-    async function initFromUrl() {
-      const selections = parseUrlSelections();
-
-      if (selections.attackerFaction) {
-        document.getElementById('attackerFaction').value = selections.attackerFaction;
-      }
-      await populateUnitsForFaction('attackerFaction', 'attackerUnit');
-      if (selections.attackerUnit) {
-        document.getElementById('attackerUnit').value = selections.attackerUnit;
-      }
-      document.getElementById('attackerCount').value = selections.attackerCount;
-      await populateWeaponsForUnit('attackerFaction', 'attackerUnit', 'attackerWeaponsContainer', selections.attackerWeapons);
-
-      if (selections.defenderFaction) {
-        document.getElementById('defenderFaction').value = selections.defenderFaction;
-      }
-      await populateUnitsForFaction('defenderFaction', 'defenderUnit');
-      if (selections.defenderUnit) {
-        document.getElementById('defenderUnit').value = selections.defenderUnit;
-      }
-      document.getElementById('defenderCount').value = selections.defenderCount;
-      await populateWeaponsForUnit('defenderFaction', 'defenderUnit', 'defenderWeaponsContainer', selections.defenderWeapons);
     }
 
     document.getElementById("attackerFaction").addEventListener("change", async () => {
