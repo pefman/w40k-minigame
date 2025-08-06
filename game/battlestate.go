@@ -52,6 +52,10 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 
 		attackWithWeapons := func(weapons []Weapon, defenderWounds *int, defenderTough string, attackerName, defenderName string) {
 			for _, weapon := range weapons {
+				if *defenderWounds <= 0 {
+					break // Stop if defender already slain
+				}
+
 				attacks := parseDice(weapon.Attacks)
 
 				// HEAVY reduces melee attacks by 1 if attacks > 1
@@ -74,13 +78,15 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 				damage := 0
 				mortalWounds := 0
 
+				// Parse ANTI-VEHICLE threshold and bonus damage
+				antiVehicleThreshold, antiVehicleBonus := parseAntiVehicleBonus(weapon.Abilities)
+
 				fmt.Fprintf(log, "💥 %s attacks %s with %s\n", attackerName, defenderName, weapon.Name)
 				fmt.Fprintf(log, "🎲 Rolling %d attacks. Need %d+ to hit\n", attacks, requiredHit)
 
 				sustainedHits := parseSustainedHits(weapon.Abilities)
 				rerollOnes := hasAbility(weapon.Abilities, "REROLL ONES")
 				mortalWoundsPerHit := parseMortalWounds(weapon.Abilities)
-				antiVehicleThreshold := parseAntiVehicleThreshold(weapon.Abilities)
 				hasDevastating := hasAbility(weapon.Abilities, "DEVASTATING WOUNDS")
 
 				for i := 0; i < attacks; i++ {
@@ -98,18 +104,54 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 
 						if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
 							wounds++
-							dmg := parseDice(weapon.Damage)
 
-							if defIsVehicle && antiVehicleThreshold > 0 {
-								weaponStrength, _ := strconv.Atoi(weapon.Strength)
-								if weaponStrength >= antiVehicleThreshold {
-									dmg++
-									fmt.Fprintf(log, "      (ANTI-VEHICLE active: +1 damage)\n")
+							// Detailed damage roll logging:
+							diceRoll := 0
+							modifier := 0
+
+							s := strings.ToUpper(strings.ReplaceAll(weapon.Damage, " ", ""))
+							re := regexp.MustCompile(`(?i)(\d*)D(\d+)([+\-]\d+)?`)
+							matches := re.FindStringSubmatch(s)
+
+							if len(matches) > 0 {
+								countStr := matches[1]
+								if countStr == "" {
+									countStr = "1"
+								}
+								count, _ := strconv.Atoi(countStr)
+								dieSize, _ := strconv.Atoi(matches[2])
+								if matches[3] != "" {
+									modifier, _ = strconv.Atoi(matches[3])
+								}
+
+								diceRoll = 0
+								for di := 0; di < count; di++ {
+									roll := rand.Intn(dieSize) + 1
+									diceRoll += roll
+									fmt.Fprintf(log, "      🎲 Damage dice roll %d: %d\n", di+1, roll)
+								}
+							} else {
+								n, err := strconv.Atoi(s)
+								if err != nil {
+									diceRoll = 1
+								} else {
+									diceRoll = n
 								}
 							}
 
-							damage += dmg
-							fmt.Fprintf(log, "      💥 Dealt %d damage\n", dmg)
+							totalDamage := diceRoll + modifier
+
+							// Add ANTI-VEHICLE bonus damage if applicable
+							if defIsVehicle && antiVehicleThreshold > 0 {
+								weaponStrength, _ := strconv.Atoi(weapon.Strength)
+								if weaponStrength >= antiVehicleThreshold {
+									totalDamage += antiVehicleBonus
+									fmt.Fprintf(log, "      (ANTI-VEHICLE active: +%d damage)\n", antiVehicleBonus)
+								}
+							}
+
+							damage += totalDamage
+							fmt.Fprintf(log, "      💥 Total damage dealt: %d (Dice total %d + Modifier %d)\n", totalDamage, diceRoll, modifier)
 
 							if mortalWoundsPerHit > 0 {
 								mortalWounds += mortalWoundsPerHit
@@ -196,6 +238,24 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 		Loser:  loser,
 		Draw:   draw,
 	}
+}
+
+// parseAntiVehicleBonus extracts threshold and bonus damage from "ANTI-VEHICLE X+" abilities
+func parseAntiVehicleBonus(abilities []string) (threshold int, bonusDamage int) {
+	for _, ab := range abilities {
+		if strings.HasPrefix(strings.ToUpper(ab), "ANTI-VEHICLE") {
+			parts := strings.Fields(ab)
+			if len(parts) == 2 {
+				thresholdStr := strings.TrimSuffix(parts[1], "+")
+				n, err := strconv.Atoi(thresholdStr)
+				if err == nil {
+					// Assume bonus damage equals threshold number (typical)
+					return n, n
+				}
+			}
+		}
+	}
+	return 0, 0
 }
 
 // Helper functions below...

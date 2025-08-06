@@ -2,16 +2,30 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"time"
 	"w40k-minigame/game"
 )
 
 var units []game.Unit
 var battleCounter int
+
+func logMemoryUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	log.Printf("Memory Usage: Alloc = %v MiB, TotalAlloc = %v MiB, Sys = %v MiB, NumGC = %v\n",
+		bToMb(m.Alloc), bToMb(m.TotalAlloc), bToMb(m.Sys), m.NumGC)
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
 
 func main() {
 	var err error
@@ -19,6 +33,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load data: %v", err)
 	}
+
+	log.Println("🚀 W40K Minigame server starting...")
+	log.Printf("Loaded %d units from JSON\n", len(units))
+
+	// Start memory usage logger ticker
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		for range ticker.C {
+			logMemoryUsage()
+		}
+	}()
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/static/", http.StatusFound)
 	})
@@ -27,10 +53,21 @@ func main() {
 	http.HandleFunc("/units", handleUnits)
 	http.HandleFunc("/battle", handleBattle)
 	http.HandleFunc("/version", handleVersion)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
+	http.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/static/")
+		filePath := filepath.Join("static", filepath.Clean(path))
+
+		info, err := os.Stat(filePath)
+		if err == nil && !info.IsDir() {
+			http.ServeFile(w, r, filePath)
+			return
+		}
+		http.ServeFile(w, r, "static/index.html")
+	})
 
 	port := "8080"
-	fmt.Printf("\n🌐 Server listening on http://localhost:%s\n", port)
+	log.Printf("🌐 Server listening on http://localhost:%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
@@ -59,7 +96,6 @@ func handleUnits(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(filtered[i].UnitName) < strings.ToLower(filtered[j].UnitName)
 	})
 
-	// Define a preview struct that includes full weapon objects
 	type UnitPreview struct {
 		Name      string        `json:"name"`
 		Wounds    string        `json:"wounds"`
@@ -73,7 +109,7 @@ func handleUnits(w http.ResponseWriter, r *http.Request) {
 			Name:      u.UnitName,
 			Wounds:    u.Stats[0].W,
 			Toughness: u.Stats[0].T,
-			Weapons:   u.Weapons, // Return full weapons here
+			Weapons:   u.Weapons,
 		})
 	}
 
@@ -108,7 +144,6 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find attacker's chosen weapons
 	atkWeapons := []game.Weapon{}
 	for _, wname := range req.AttackerWeapons {
 		for _, w := range atk.Weapons {
@@ -119,7 +154,6 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Find defender's chosen weapons
 	defWeapons := []game.Weapon{}
 	for _, wname := range req.DefenderWeapons {
 		for _, w := range def.Weapons {
@@ -132,6 +166,7 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 
 	result := game.SimulateBattleMultipleWeapons(atk, atkWeapons, def, defWeapons)
 	battleCounter++
+	log.Printf("⚔️  Battle #%d simulated: %s vs %s", battleCounter, atk.UnitName, def.UnitName)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -140,7 +175,7 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleVersion(w http.ResponseWriter, r *http.Request) {
-	version := "dev" // or set via env or ldflags
+	version := "dev"
 	json.NewEncoder(w).Encode(map[string]string{"version": version})
 }
 
