@@ -220,15 +220,17 @@ async function updateWeaponsOnUnitChange(unitId, weaponsId) {
     return 0;
   });
 
-  weapons.forEach(w => {
-    const opt = document.createElement("option");
-    const strength = w.strength ?? "?";
-    const ap = w.ap ?? "?";
-    const name = w.name ?? "Unknown Weapon";
-    opt.value = name;
-    opt.textContent = `${name} (S: ${strength} / AP: ${ap})`;
-    weaponsSelect.appendChild(opt);
-  });
+weapons.forEach(w => {
+  const opt = document.createElement("option");
+  const strength = w.strength ?? "?";
+  const ap = w.ap ?? "?";
+  const name = w.name ?? "Unknown Weapon";
+  const rangeType = w.range ?? "?";
+  opt.value = name;
+  opt.textContent = `${name} (${rangeType}) (S: ${strength} / AP: ${ap})`;
+  weaponsSelect.appendChild(opt);
+});
+
 }
 
 
