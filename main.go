@@ -19,6 +19,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load data: %v", err)
 	}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/static/", http.StatusFound)
+	})
 
 	http.HandleFunc("/factions", handleFactions)
 	http.HandleFunc("/units", handleUnits)
