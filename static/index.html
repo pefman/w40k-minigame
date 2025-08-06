@@ -8,7 +8,8 @@
     h1 { color: #0ff; }
     select, button { margin: 5px 0; padding: 5px; }
     label { display: block; margin-top: 15px; font-weight: bold; }
-    .result { margin-top: 20px; white-space: pre-line; }
+    .result { margin-top: 20px; white-space: pre-line; background: #222; padding: 10px; border: 1px solid #444; }
+    button:disabled { background: #444; color: #aaa; }
   </style>
 </head>
 <body>
@@ -33,82 +34,83 @@
   </select>
 
   <br>
-  <button onclick="simulateBattle()">⚔️ Simulate Battle</button>
+  <button id="startBtn">⚔️ Simulate Full Battle</button>
 
   <div class="result" id="result"></div>
-<script>
-  const apiBase = "";
 
-  function normalize(s) {
-    return s.toLowerCase()
-      .replace(/['"]/g, '')
-      .replace(/[ /]/g, '-');
-  }
+  <script>
+    const apiBase = "";
 
-  async function fetchFactions() {
-    const res = await fetch(`${apiBase}/factions`);
-    return await res.json();
-  }
+    function normalize(s) {
+      return s.toLowerCase()
+        .replace(/['"]/g, '')
+        .replace(/[ /]/g, '-');
+    }
 
-  async function fetchUnits(faction) {
-    const res = await fetch(`${apiBase}/units?faction=${faction}`);
-    return await res.json();
-  }
+    async function fetchFactions() {
+      const res = await fetch(`${apiBase}/factions`);
+      return await res.json();
+    }
 
-  async function populateFactions() {
-    const factions = await fetchFactions();
+    async function fetchUnits(faction) {
+      const res = await fetch(`${apiBase}/units?faction=${faction}`);
+      return await res.json();
+    }
 
-    for (const id of ["attackerFaction", "defenderFaction"]) {
-      const select = document.getElementById(id);
+    async function populateFactions() {
+      const factions = await fetchFactions();
+
+      for (const id of ["attackerFaction", "defenderFaction"]) {
+        const select = document.getElementById(id);
+        select.innerHTML = "";
+        factions.forEach(f => {
+          const opt = document.createElement("option");
+          opt.value = normalize(f);
+          opt.textContent = f;
+          select.appendChild(opt);
+        });
+      }
+
+      await populateUnits("attackerFaction", "attackerUnit");
+      await populateUnits("defenderFaction", "defenderUnit");
+    }
+
+    async function populateUnits(factionId, unitId) {
+      const factionValue = document.getElementById(factionId).value;
+      const units = await fetchUnits(factionValue);
+
+      const select = document.getElementById(unitId);
       select.innerHTML = "";
-      factions.forEach(f => {
+      units.forEach(u => {
         const opt = document.createElement("option");
-        opt.value = normalize(f);
-        opt.textContent = f;
+        opt.value = u.name;
+        opt.textContent = `${u.name} (W:${u.wounds}, T:${u.toughness})`;
         select.appendChild(opt);
       });
     }
 
-    await populateUnits("attackerFaction", "attackerUnit");
-    await populateUnits("defenderFaction", "defenderUnit");
-  }
+    async function startBattle() {
+      const attacker = document.getElementById("attackerUnit").value;
+      const defender = document.getElementById("defenderUnit").value;
+      const type = document.getElementById("battleType").value;
 
-  async function populateUnits(factionId, unitId) {
-    const factionValue = document.getElementById(factionId).value;
-    const units = await fetchUnits(factionValue);
+      const res = await fetch(`${apiBase}/battle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attacker, defender, type })
+      });
 
-    const select = document.getElementById(unitId);
-    select.innerHTML = "";
-    units.forEach(u => {
-      const opt = document.createElement("option");
-      opt.value = u.name;
-      opt.textContent = `${u.name} (W:${u.wounds}, T:${u.toughness})`;
-      select.appendChild(opt);
-    });
-  }
+      const data = await res.json();
+      document.getElementById("result").textContent = data.result || "Battle failed.";
+    }
 
-  async function simulateBattle() {
-    const attacker = document.getElementById("attackerUnit").value;
-    const defender = document.getElementById("defenderUnit").value;
-    const type = document.getElementById("battleType").value;
+    document.getElementById("attackerFaction").addEventListener("change", () =>
+      populateUnits("attackerFaction", "attackerUnit"));
+    document.getElementById("defenderFaction").addEventListener("change", () =>
+      populateUnits("defenderFaction", "defenderUnit"));
+    document.getElementById("startBtn").addEventListener("click", startBattle);
 
-    const res = await fetch(`${apiBase}/battle`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ attacker, defender, type })
-    });
-
-    const data = await res.json();
-    document.getElementById("result").textContent = data.result || "Battle failed.";
-  }
-
-  document.getElementById("attackerFaction").addEventListener("change", () =>
-    populateUnits("attackerFaction", "attackerUnit"));
-  document.getElementById("defenderFaction").addEventListener("change", () =>
-    populateUnits("defenderFaction", "defenderUnit"));
-
-  populateFactions();
-</script>
-
+    populateFactions();
+  </script>
 </body>
 </html>

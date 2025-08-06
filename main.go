@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -13,15 +12,6 @@ import (
 )
 
 var units []game.Unit
-
-func normalize(s string) string {
-	s = strings.ToLower(s)
-	s = strings.ReplaceAll(s, " ", "-")
-	s = strings.ReplaceAll(s, "'", "")
-	s = strings.ReplaceAll(s, "\"", "")
-	s = strings.ReplaceAll(s, "/", "-")
-	return s
-}
 
 func main() {
 	var err error
@@ -51,15 +41,13 @@ func handleUnits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filtered := []game.Unit{}
-	normalized := normalize(faction)
-
 	for _, u := range units {
-		if normalize(u.FactionName) == normalized {
+		if strings.EqualFold(normalize(u.FactionName), normalize(faction)) {
 			filtered = append(filtered, u)
 		}
 	}
 
-	// Normalize unit names (capitalize) and sort by wounds
+	// Normalize unit names and sort by wounds
 	for i := range filtered {
 		filtered[i].UnitName = strings.Title(strings.ToLower(filtered[i].UnitName))
 	}
@@ -69,7 +57,7 @@ func handleUnits(w http.ResponseWriter, r *http.Request) {
 		return wi > wj
 	})
 
-	// Return only name, wounds, and toughness
+	// Return a simplified preview
 	type UnitPreview struct {
 		Name      string `json:"name"`
 		Wounds    string `json:"wounds"`
@@ -104,7 +92,8 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 	for _, u := range units {
 		if strings.EqualFold(u.UnitName, req.Attacker) {
 			atk = u
-		} else if strings.EqualFold(u.UnitName, req.Defender) {
+		}
+		if strings.EqualFold(u.UnitName, req.Defender) {
 			def = u
 		}
 	}
@@ -115,5 +104,16 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 
 	result := game.SimulateBattle(atk, def, req.Type)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"result": result})
+	json.NewEncoder(w).Encode(map[string]string{
+		"result": result.Log,
+	})
+}
+
+func normalize(s string) string {
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, " ", "-")
+	s = strings.ReplaceAll(s, "'", "")
+	s = strings.ReplaceAll(s, "\"", "")
+	s = strings.ReplaceAll(s, "/", "-")
+	return s
 }
