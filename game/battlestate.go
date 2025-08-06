@@ -26,7 +26,7 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 	wD, _ := strconv.Atoi(defender.Stats[0].W)
 
 	log := &strings.Builder{}
-	fmt.Fprintf(log, "💥 %s vs %s\n\n", attacker.UnitName, defender.UnitName)
+	fmt.Fprintf(log, "💥 Battle starts: %s vs %s\n\n", attacker.UnitName, defender.UnitName)
 
 	defIsVehicle := false
 	for _, kw := range defender.Keywords {
@@ -41,120 +41,137 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 		}
 	}
 
-	attackWithWeapons := func(weapons []Weapon, defenderWounds *int, defenderTough string, attackerName, defenderName string) {
-		for _, weapon := range weapons {
-			attacks := parseDice(weapon.Attacks)
-
-			if hasAbility(weapon.Abilities, "HEAVY") && strings.EqualFold(weapon.Range, "melee") {
-				if attacks > 1 {
-					attacks--
-					fmt.Fprintf(log, "  (HEAVY ability active: attacks reduced by 1 to %d)\n", attacks)
-				}
-			}
-
-			if hasAbility(weapon.Abilities, "BLAST") {
-				attacks *= 3
-				fmt.Fprintf(log, "  (BLAST ability active: attacks tripled to %d)\n", attacks)
-			}
-
-			requiredHit := parseSkill(weapon.Skill)
-			hits := 0
-			wounds := 0
-			damage := 0
-			mortalWounds := 0
-
-			fmt.Fprintf(log, "💥 %s attacks %s with %s\n", attackerName, defenderName, weapon.Name)
-			fmt.Fprintf(log, "🎲 Rolling %d attacks. Need %d+ to hit\n", attacks, requiredHit)
-
-			sustainedHits := parseSustainedHits(weapon.Abilities)
-			rerollOnes := hasAbility(weapon.Abilities, "REROLL ONES")
-			mortalWoundsPerHit := parseMortalWounds(weapon.Abilities)
-			antiVehicleThreshold := parseAntiVehicleThreshold(weapon.Abilities)
-			hasDevastating := hasAbility(weapon.Abilities, "DEVASTATING WOUNDS")
-
-			for i := 0; i < attacks; i++ {
-				hitRoll := rollDiceWithReroll(requiredHit, rerollOnes)
-				fmt.Fprintf(log, "  🎯 Attack %d rolled a %d", i+1, hitRoll)
-				if hitRoll >= requiredHit {
-					hits++
-					fmt.Fprintf(log, " — HIT!\n")
-
-					isCrit := hitRoll == 6
-					if isCrit && hasDevastating {
-						mortalWounds++
-						fmt.Fprintf(log, "      💥 Critical Hit! Devastating Wounds inflicted (+1 mortal wound)\n")
-					}
-
-					if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
-						wounds++
-						dmg := parseDice(weapon.Damage)
-
-						if defIsVehicle && antiVehicleThreshold > 0 {
-							weaponStrength, _ := strconv.Atoi(weapon.Strength)
-							if weaponStrength >= antiVehicleThreshold {
-								dmg++
-								fmt.Fprintf(log, "      (ANTI-VEHICLE active: +1 damage)\n")
-							}
-						}
-
-						damage += dmg
-						fmt.Fprintf(log, "      💥 Dealt %d damage\n", dmg)
-
-						if mortalWoundsPerHit > 0 {
-							mortalWounds += mortalWoundsPerHit
-							fmt.Fprintf(log, "      💀 Inflicted %d mortal wounds (ignores armor)\n", mortalWoundsPerHit)
-						}
-					} else {
-						fmt.Fprintf(log, "      ❌ Failed to wound\n")
-					}
-
-					for sh := 0; sh < sustainedHits; sh++ {
-						extraHit := rollDiceWithReroll(requiredHit, rerollOnes)
-						fmt.Fprintf(log, "    🔄 Sustained Hit %d rolled a %d", sh+1, extraHit)
-						if extraHit >= requiredHit {
-							hits++
-							fmt.Fprintf(log, " — HIT!\n")
-
-							if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
-								wounds++
-								dmg := parseDice(weapon.Damage)
-								damage += dmg
-								fmt.Fprintf(log, "      💥 Dealt %d damage\n", dmg)
-
-								if mortalWoundsPerHit > 0 {
-									mortalWounds += mortalWoundsPerHit
-									fmt.Fprintf(log, "      💀 Inflicted %d mortal wounds (ignores armor)\n", mortalWoundsPerHit)
-								}
-							} else {
-								fmt.Fprintf(log, "      ❌ Failed to wound\n")
-							}
-						} else {
-							fmt.Fprintf(log, " — MISS\n")
-						}
-					}
-				} else {
-					fmt.Fprintf(log, " — MISS\n")
-				}
-			}
-
-			totalDamage := damage + mortalWounds
-			*defenderWounds -= totalDamage
-			if *defenderWounds < 0 {
-				*defenderWounds = 0
-			}
-
-			fmt.Fprintf(log, "\n📊 Summary: Hits: %d | Wounds: %d | Damage: %d (+%d mortal wounds) | %s's Remaining Wounds: %d\n\n",
-				hits, wounds, damage, mortalWounds, defenderName, *defenderWounds)
-		}
-	}
-
 	attackerWounds := wA
 	defenderWounds := wD
 	defenderTough := defender.Stats[0].T
 	attackerTough := attacker.Stats[0].T
 
-	attackWithWeapons(attackerWeapons, &defenderWounds, defenderTough, attacker.UnitName, defender.UnitName)
-	attackWithWeapons(defenderWeapons, &attackerWounds, attackerTough, defender.UnitName, attacker.UnitName)
+	round := 1
+	for attackerWounds > 0 && defenderWounds > 0 {
+		fmt.Fprintf(log, "🔁 Round %d\n\n", round)
+
+		attackWithWeapons := func(weapons []Weapon, defenderWounds *int, defenderTough string, attackerName, defenderName string) {
+			for _, weapon := range weapons {
+				attacks := parseDice(weapon.Attacks)
+
+				// HEAVY reduces melee attacks by 1 if attacks > 1
+				if hasAbility(weapon.Abilities, "HEAVY") && strings.EqualFold(weapon.Range, "melee") {
+					if attacks > 1 {
+						attacks--
+						fmt.Fprintf(log, "  (HEAVY ability active: attacks reduced by 1 to %d)\n", attacks)
+					}
+				}
+
+				// BLAST triples attacks
+				if hasAbility(weapon.Abilities, "BLAST") {
+					attacks *= 3
+					fmt.Fprintf(log, "  (BLAST ability active: attacks tripled to %d)\n", attacks)
+				}
+
+				requiredHit := parseSkill(weapon.Skill)
+				hits := 0
+				wounds := 0
+				damage := 0
+				mortalWounds := 0
+
+				fmt.Fprintf(log, "💥 %s attacks %s with %s\n", attackerName, defenderName, weapon.Name)
+				fmt.Fprintf(log, "🎲 Rolling %d attacks. Need %d+ to hit\n", attacks, requiredHit)
+
+				sustainedHits := parseSustainedHits(weapon.Abilities)
+				rerollOnes := hasAbility(weapon.Abilities, "REROLL ONES")
+				mortalWoundsPerHit := parseMortalWounds(weapon.Abilities)
+				antiVehicleThreshold := parseAntiVehicleThreshold(weapon.Abilities)
+				hasDevastating := hasAbility(weapon.Abilities, "DEVASTATING WOUNDS")
+
+				for i := 0; i < attacks; i++ {
+					hitRoll := rollDiceWithReroll(requiredHit, rerollOnes)
+					fmt.Fprintf(log, "  🎯 Attack %d rolled a %d", i+1, hitRoll)
+					if hitRoll >= requiredHit {
+						hits++
+						fmt.Fprintf(log, " — HIT!\n")
+
+						isCrit := hitRoll == 6
+						if isCrit && hasDevastating {
+							mortalWounds++
+							fmt.Fprintf(log, "      💥 Critical Hit! Devastating Wounds inflicted (+1 mortal wound)\n")
+						}
+
+						if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
+							wounds++
+							dmg := parseDice(weapon.Damage)
+
+							if defIsVehicle && antiVehicleThreshold > 0 {
+								weaponStrength, _ := strconv.Atoi(weapon.Strength)
+								if weaponStrength >= antiVehicleThreshold {
+									dmg++
+									fmt.Fprintf(log, "      (ANTI-VEHICLE active: +1 damage)\n")
+								}
+							}
+
+							damage += dmg
+							fmt.Fprintf(log, "      💥 Dealt %d damage\n", dmg)
+
+							if mortalWoundsPerHit > 0 {
+								mortalWounds += mortalWoundsPerHit
+								fmt.Fprintf(log, "      💀 Inflicted %d mortal wounds (ignores armor)\n", mortalWoundsPerHit)
+							}
+						} else {
+							fmt.Fprintf(log, "      ❌ Failed to wound\n")
+						}
+
+						for sh := 0; sh < sustainedHits; sh++ {
+							extraHit := rollDiceWithReroll(requiredHit, rerollOnes)
+							fmt.Fprintf(log, "    🔄 Sustained Hit %d rolled a %d", sh+1, extraHit)
+							if extraHit >= requiredHit {
+								hits++
+								fmt.Fprintf(log, " — HIT!\n")
+
+								if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
+									wounds++
+									dmg := parseDice(weapon.Damage)
+									damage += dmg
+									fmt.Fprintf(log, "      💥 Dealt %d damage\n", dmg)
+
+									if mortalWoundsPerHit > 0 {
+										mortalWounds += mortalWoundsPerHit
+										fmt.Fprintf(log, "      💀 Inflicted %d mortal wounds (ignores armor)\n", mortalWoundsPerHit)
+									}
+								} else {
+									fmt.Fprintf(log, "      ❌ Failed to wound\n")
+								}
+							} else {
+								fmt.Fprintf(log, " — MISS\n")
+							}
+						}
+					} else {
+						fmt.Fprintf(log, " — MISS\n")
+					}
+				}
+
+				totalDamage := damage + mortalWounds
+				*defenderWounds -= totalDamage
+				if *defenderWounds < 0 {
+					*defenderWounds = 0
+				}
+
+				fmt.Fprintf(log, "\n📊 Summary: Hits: %d | Wounds: %d | Damage: %d (+%d mortal wounds) | %s's Remaining Wounds: %d\n\n",
+					hits, wounds, damage, mortalWounds, defenderName, *defenderWounds)
+			}
+		}
+
+		attackWithWeapons(attackerWeapons, &defenderWounds, defenderTough, attacker.UnitName, defender.UnitName)
+		if defenderWounds <= 0 {
+			break
+		}
+
+		attackWithWeapons(defenderWeapons, &attackerWounds, attackerTough, defender.UnitName, attacker.UnitName)
+		if attackerWounds <= 0 {
+			break
+		}
+
+		round++
+		fmt.Fprintf(log, "\n--------------------------\n\n")
+	}
 
 	var winner, loser string
 	var draw bool
