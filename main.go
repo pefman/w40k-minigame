@@ -28,6 +28,7 @@ func main() {
 	http.HandleFunc("/units", handleUnits)
 	http.HandleFunc("/battle", handleBattle)
 	http.HandleFunc("/version", handleVersion)
+	http.HandleFunc("/healthz", healthHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	port := "8080"
@@ -37,6 +38,11 @@ func main() {
 
 func handleFactions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(game.GetFactions(units))
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }
 
 func handleUnits(w http.ResponseWriter, r *http.Request) {
