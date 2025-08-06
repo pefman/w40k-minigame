@@ -12,6 +12,7 @@ import (
 )
 
 var units []game.Unit
+var battleCounter int
 
 func main() {
 	var err error
@@ -23,6 +24,7 @@ func main() {
 	http.HandleFunc("/factions", handleFactions)
 	http.HandleFunc("/units", handleUnits)
 	http.HandleFunc("/battle", handleBattle)
+	http.HandleFunc("/version", handleVersion)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	port := "8080"
@@ -57,7 +59,6 @@ func handleUnits(w http.ResponseWriter, r *http.Request) {
 		return wi > wj
 	})
 
-	// Return a simplified preview
 	type UnitPreview struct {
 		Name      string `json:"name"`
 		Wounds    string `json:"wounds"`
@@ -103,10 +104,17 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := game.SimulateBattle(atk, def, req.Type)
+	battleCounter++
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"result": result.Log,
 	})
+}
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	version := "dev" // or set via env or ldflags
+	json.NewEncoder(w).Encode(map[string]string{"version": version})
 }
 
 func normalize(s string) string {
