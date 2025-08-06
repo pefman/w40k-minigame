@@ -38,24 +38,27 @@ func SimulateBattleGroups(
 	for attackerWounds > 0 && defenderWounds > 0 {
 		fmt.Fprintf(log, "🔁 Round %d\n\n", round)
 
-		attackWithWeapons := func(weapons []Weapon, defenderWounds *int, defenderTough string, attackerName, defenderName string, unitCount int) {
+		attackWithWeapons := func(weapons []Weapon, defenderWounds *int, defenderTough string, attackerName, defenderName string, targetUnitCount int) {
 			for _, weapon := range weapons {
 				if *defenderWounds <= 0 {
 					break
 				}
 
-				attacks := parseDice(weapon.Attacks) * unitCount
-
-				if hasAbility(weapon.Abilities, "HEAVY") && strings.EqualFold(weapon.Range, "melee") {
-					if attacks > unitCount {
-						attacks -= unitCount
-						fmt.Fprintf(log, "  (HEAVY ability active: attacks reduced by %d to %d)\n", unitCount, attacks)
-					}
+				baseAttacks := parseDice(weapon.Attacks)
+				var attacks int
+				if hasAbility(weapon.Abilities, "BLAST") && targetUnitCount >= 5 {
+					bonusAttacks := targetUnitCount / 5
+					attacks = baseAttacks + bonusAttacks
+					fmt.Fprintf(log, "  (BLAST ability active: attacks = %d (base %d + bonus %d))\n", attacks, baseAttacks, bonusAttacks)
+				} else {
+					attacks = baseAttacks * targetUnitCount
 				}
 
-				if hasAbility(weapon.Abilities, "BLAST") {
-					attacks *= 3
-					fmt.Fprintf(log, "  (BLAST ability active: attacks tripled to %d)\n", attacks)
+				if hasAbility(weapon.Abilities, "HEAVY") && strings.EqualFold(weapon.Range, "melee") {
+					if attacks > targetUnitCount {
+						attacks -= targetUnitCount
+						fmt.Fprintf(log, "  (HEAVY ability active: attacks reduced by %d to %d)\n", targetUnitCount, attacks)
+					}
 				}
 
 				requiredHit := parseSkill(weapon.Skill)
@@ -87,7 +90,8 @@ func SimulateBattleGroups(
 							fmt.Fprintf(log, "      💥 Critical Hit! Devastating Wounds inflicted (+1 mortal wound)\n")
 						}
 
-						if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
+						woundSuccess, woundRoll := rollWoundVerboseWithRoll(weapon.Strength, defenderTough, log, i+1)
+						if woundSuccess {
 							wounds++
 
 							diceRoll, modifier := rollDamageDice(weapon.Damage, log)
@@ -112,7 +116,7 @@ func SimulateBattleGroups(
 								fmt.Fprintf(log, "      💀 Inflicted %d mortal wounds (ignores armor)\n", mortalWoundsPerHit)
 							}
 						} else {
-							fmt.Fprintf(log, "      ❌ Failed to wound\n")
+							fmt.Fprintf(log, "      ❌ Failed to wound (rolled %d)\n", woundRoll)
 						}
 
 						for sh := 0; sh < sustainedHits; sh++ {
@@ -122,7 +126,8 @@ func SimulateBattleGroups(
 								hits++
 								fmt.Fprintf(log, " — HIT!\n")
 
-								if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
+								woundSuccess, woundRoll := rollWoundVerboseWithRoll(weapon.Strength, defenderTough, log, i+1)
+								if woundSuccess {
 									wounds++
 									dmg := parseDice(weapon.Damage)
 									damage += dmg
@@ -133,7 +138,7 @@ func SimulateBattleGroups(
 										fmt.Fprintf(log, "      💀 Inflicted %d mortal wounds (ignores armor)\n", mortalWoundsPerHit)
 									}
 								} else {
-									fmt.Fprintf(log, "      ❌ Failed to wound\n")
+									fmt.Fprintf(log, "      ❌ Failed to wound (rolled %d)\n", woundRoll)
 								}
 							} else {
 								fmt.Fprintf(log, " — MISS\n")
@@ -155,12 +160,12 @@ func SimulateBattleGroups(
 			}
 		}
 
-		attackWithWeapons(attackerWeapons, &defenderWounds, defenderTough, attacker.UnitName, defender.UnitName, attackerCount)
+		attackWithWeapons(attackerWeapons, &defenderWounds, defenderTough, attacker.UnitName, defender.UnitName, defenderCount)
 		if defenderWounds <= 0 {
 			break
 		}
 
-		attackWithWeapons(defenderWeapons, &attackerWounds, attackerTough, defender.UnitName, attacker.UnitName, defenderCount)
+		attackWithWeapons(defenderWeapons, &attackerWounds, attackerTough, defender.UnitName, attacker.UnitName, attackerCount)
 		if attackerWounds <= 0 {
 			break
 		}
@@ -194,7 +199,7 @@ func SimulateBattleGroups(
 	}
 }
 
-// rollDamageDice parses damage string and logs each damage dice roll
+// rollDamageDice parses damage string and logs rolls
 func rollDamageDice(damageStr string, log *strings.Builder) (int, int) {
 	diceRoll := 0
 	modifier := 0
@@ -231,7 +236,31 @@ func rollDamageDice(damageStr string, log *strings.Builder) (int, int) {
 	return diceRoll, modifier
 }
 
-// isUnitVehicle checks if unit has "Vehicle" keyword
+// rollWoundVerboseWithRoll returns success and wound roll, logs wound roll details
+func rollWoundVerboseWithRoll(strStr string, tghStr string, log *strings.Builder, index int) (bool, int) {
+	s, _ := strconv.Atoi(strStr)
+	t, _ := strconv.Atoi(tghStr)
+	roll := rand.Intn(6) + 1
+
+	var needed int
+	switch {
+	case s >= t*2:
+		needed = 2
+	case s > t:
+		needed = 3
+	case s == t:
+		needed = 4
+	case s*2 <= t:
+		needed = 6
+	default:
+		needed = 5
+	}
+
+	fmt.Fprintf(log, "      🎲 Wound Roll %d: %d vs Toughness %d (need %d+)\n", index, roll, t, needed)
+	return roll >= needed, roll
+}
+
+// isUnitVehicle checks if unit has Vehicle keyword
 func isUnitVehicle(u Unit) bool {
 	for _, kw := range u.Keywords {
 		for _, w := range kw.Words {
@@ -357,28 +386,4 @@ func rollDiceWithReroll(needed int, rerollOnes bool) int {
 		roll = rand.Intn(6) + 1
 	}
 	return roll
-}
-
-// rollWoundVerbose rolls wound dice and logs detailed info, returns success/failure
-func rollWoundVerbose(strStr string, tghStr string, log *strings.Builder, index int) bool {
-	s, _ := strconv.Atoi(strStr)
-	t, _ := strconv.Atoi(tghStr)
-	roll := rand.Intn(6) + 1
-
-	var needed int
-	switch {
-	case s >= t*2:
-		needed = 2
-	case s > t:
-		needed = 3
-	case s == t:
-		needed = 4
-	case s*2 <= t:
-		needed = 6
-	default:
-		needed = 5
-	}
-
-	fmt.Fprintf(log, "      🎲 Wound Roll %d: %d vs Toughness %d (need %d+)\n", index, roll, t, needed)
-	return roll >= needed
 }
