@@ -37,6 +37,9 @@
       color: #eee;
       box-sizing: border-box;
     }
+    select[multiple] {
+      height: 120px;
+    }
     select:focus,
     button:focus {
       outline: 2px solid #0ff;
@@ -95,17 +98,17 @@
   <label for="attackerUnit">Attacker Unit:</label>
   <select id="attackerUnit"></select>
 
+  <label for="attackerWeapons">Attacker Weapons:</label>
+  <select id="attackerWeapons" multiple></select>
+
   <label for="defenderFaction">Defender Faction:</label>
   <select id="defenderFaction"></select>
 
   <label for="defenderUnit">Defender Unit:</label>
   <select id="defenderUnit"></select>
 
-  <label>Battle Type:</label>
-  <select id="battleType">
-    <option value="ranged">Ranged</option>
-    <option value="melee">Melee</option>
-  </select>
+  <label for="defenderWeapons">Defender Weapons:</label>
+  <select id="defenderWeapons" multiple></select>
 
   <button id="startBtn">⚔️ Simulate Full Battle</button>
 
@@ -150,33 +153,101 @@
         });
       }
 
-      await populateUnits("attackerFaction", "attackerUnit");
-      await populateUnits("defenderFaction", "defenderUnit");
+      await populateUnits("attackerFaction", "attackerUnit", "attackerWeapons");
+      await populateUnits("defenderFaction", "defenderUnit", "defenderWeapons");
     }
 
-    async function populateUnits(factionId, unitId) {
+    async function populateUnits(factionId, unitId, weaponsId) {
       const factionValue = document.getElementById(factionId).value;
       const units = await fetchUnits(factionValue);
 
-      const select = document.getElementById(unitId);
-      select.innerHTML = "";
+      const unitSelect = document.getElementById(unitId);
+      const weaponsSelect = document.getElementById(weaponsId);
+
+      unitSelect.innerHTML = "";
+      weaponsSelect.innerHTML = "";
+
       units.forEach(u => {
         const opt = document.createElement("option");
         opt.value = u.name;
         opt.textContent = `${u.name} (W:${u.wounds}, T:${u.toughness})`;
-        select.appendChild(opt);
+        unitSelect.appendChild(opt);
+      });
+
+      if (units.length === 0) return;
+
+      const selectedUnitName = unitSelect.value || units[0].name;
+      const selectedUnit = units.find(u => u.name === selectedUnitName);
+      if (!selectedUnit) return;
+
+      let weapons = selectedUnit.weapons || [];
+      weapons.sort((a, b) => {
+        const rangeA = (a.range || "").toLowerCase();
+        const rangeB = (b.range || "").toLowerCase();
+        if (rangeA === "melee" && rangeB !== "melee") return 1;
+        if (rangeA !== "melee" && rangeB === "melee") return -1;
+        return 0;
+      });
+
+      weapons.forEach(w => {
+        const opt = document.createElement("option");
+        const strength = w.strength ?? "?";
+        const ap = w.ap ?? "?";
+        const name = w.name ?? "Unknown Weapon";
+        opt.value = name;
+        opt.textContent = `${name} (S: ${strength} / AP: ${ap})`;
+        weaponsSelect.appendChild(opt);
       });
     }
 
+async function updateWeaponsOnUnitChange(unitId, weaponsId) {
+  const factionValue = normalize(document.getElementById(unitId.replace('Unit', 'Faction')).value);
+  const unitName = document.getElementById(unitId).value;
+  const units = await fetchUnits(factionValue);
+
+  const weaponsSelect = document.getElementById(weaponsId);
+  weaponsSelect.innerHTML = "";
+
+  const unit = units.find(u => u.name === unitName);
+  if (!unit) return;
+
+  let weapons = unit.weapons || [];
+  weapons.sort((a, b) => {
+    const rangeA = (a.range || "").toLowerCase();
+    const rangeB = (b.range || "").toLowerCase();
+    if (rangeA === "melee" && rangeB !== "melee") return 1;
+    if (rangeA !== "melee" && rangeB === "melee") return -1;
+    return 0;
+  });
+
+  weapons.forEach(w => {
+    const opt = document.createElement("option");
+    const strength = w.strength ?? "?";
+    const ap = w.ap ?? "?";
+    const name = w.name ?? "Unknown Weapon";
+    opt.value = name;
+    opt.textContent = `${name} (S: ${strength} / AP: ${ap})`;
+    weaponsSelect.appendChild(opt);
+  });
+}
+
+
     async function startBattle() {
       const attacker = document.getElementById("attackerUnit").value;
+      const attackerWeapons = Array.from(document.getElementById("attackerWeapons").selectedOptions).map(o => o.value);
+
       const defender = document.getElementById("defenderUnit").value;
-      const type = document.getElementById("battleType").value;
+      const defenderWeapons = Array.from(document.getElementById("defenderWeapons").selectedOptions).map(o => o.value);
 
       const res = await fetch(`${apiBase}/battle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attacker, defender, type })
+        body: JSON.stringify({
+          attacker,
+          attackerWeapons,
+          defender,
+          defenderWeapons,
+        }),
       });
 
       const data = await res.json();
@@ -186,20 +257,19 @@
       document.getElementById("battleCount").textContent = battleCounter;
     }
 
-    async function fetchVersion() {
-      const res = await fetch("/version");
-      const data = await res.json();
-      document.getElementById("appVersion").textContent = data.version;
-    }
-
     document.getElementById("attackerFaction").addEventListener("change", () =>
-      populateUnits("attackerFaction", "attackerUnit"));
+      populateUnits("attackerFaction", "attackerUnit", "attackerWeapons"));
     document.getElementById("defenderFaction").addEventListener("change", () =>
-      populateUnits("defenderFaction", "defenderUnit"));
+      populateUnits("defenderFaction", "defenderUnit", "defenderWeapons"));
+
+    document.getElementById("attackerUnit").addEventListener("change", () =>
+      updateWeaponsOnUnitChange("attackerUnit", "attackerWeapons"));
+    document.getElementById("defenderUnit").addEventListener("change", () =>
+      updateWeaponsOnUnitChange("defenderUnit", "defenderWeapons"));
+
     document.getElementById("startBtn").addEventListener("click", startBattle);
 
     populateFactions();
-    fetchVersion();
   </script>
 </body>
 </html>

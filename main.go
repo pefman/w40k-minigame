@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"w40k-minigame/game"
 )
@@ -15,9 +14,6 @@ var units []game.Unit
 var battleCounter int
 
 func main() {
-
-	log.Println("App started")
-
 	var err error
 	units, err = game.LoadUnitsFromFile("static/wh40k_10th.json")
 	if err != nil {
@@ -28,7 +24,6 @@ func main() {
 	http.HandleFunc("/units", handleUnits)
 	http.HandleFunc("/battle", handleBattle)
 	http.HandleFunc("/version", handleVersion)
-	http.HandleFunc("/healthz", healthHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	port := "8080"
@@ -38,11 +33,6 @@ func main() {
 
 func handleFactions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(game.GetFactions(units))
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
 }
 
 func handleUnits(w http.ResponseWriter, r *http.Request) {
@@ -58,27 +48,29 @@ func handleUnits(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Normalize unit names and sort by wounds
 	for i := range filtered {
 		filtered[i].UnitName = strings.Title(strings.ToLower(filtered[i].UnitName))
 	}
+
 	sort.Slice(filtered, func(i, j int) bool {
-		wi, _ := strconv.Atoi(filtered[i].Stats[0].W)
-		wj, _ := strconv.Atoi(filtered[j].Stats[0].W)
-		return wi > wj
+		return strings.ToLower(filtered[i].UnitName) < strings.ToLower(filtered[j].UnitName)
 	})
 
+	// Define a preview struct that includes full weapon objects
 	type UnitPreview struct {
-		Name      string `json:"name"`
-		Wounds    string `json:"wounds"`
-		Toughness string `json:"toughness"`
+		Name      string        `json:"name"`
+		Wounds    string        `json:"wounds"`
+		Toughness string        `json:"toughness"`
+		Weapons   []game.Weapon `json:"weapons"`
 	}
+
 	previews := []UnitPreview{}
 	for _, u := range filtered {
 		previews = append(previews, UnitPreview{
 			Name:      u.UnitName,
 			Wounds:    u.Stats[0].W,
 			Toughness: u.Stats[0].T,
+			Weapons:   u.Weapons, // Return full weapons here
 		})
 	}
 
@@ -88,9 +80,10 @@ func handleUnits(w http.ResponseWriter, r *http.Request) {
 
 func handleBattle(w http.ResponseWriter, r *http.Request) {
 	type BattleRequest struct {
-		Attacker string `json:"attacker"`
-		Defender string `json:"defender"`
-		Type     string `json:"type"`
+		Attacker        string   `json:"attacker"`
+		AttackerWeapons []string `json:"attackerWeapons"`
+		Defender        string   `json:"defender"`
+		DefenderWeapons []string `json:"defenderWeapons"`
 	}
 	var req BattleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -112,7 +105,29 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := game.SimulateBattle(atk, def, req.Type)
+	// Find attacker's chosen weapons
+	atkWeapons := []game.Weapon{}
+	for _, wname := range req.AttackerWeapons {
+		for _, w := range atk.Weapons {
+			if strings.EqualFold(w.Name, wname) {
+				atkWeapons = append(atkWeapons, w)
+				break
+			}
+		}
+	}
+
+	// Find defender's chosen weapons
+	defWeapons := []game.Weapon{}
+	for _, wname := range req.DefenderWeapons {
+		for _, w := range def.Weapons {
+			if strings.EqualFold(w.Name, wname) {
+				defWeapons = append(defWeapons, w)
+				break
+			}
+		}
+	}
+
+	result := game.SimulateBattleMultipleWeapons(atk, atkWeapons, def, defWeapons)
 	battleCounter++
 
 	w.Header().Set("Content-Type", "application/json")

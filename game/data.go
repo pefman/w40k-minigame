@@ -6,13 +6,14 @@ import (
 )
 
 type Weapon struct {
-	Name     string `json:"name"`
-	Range    string `json:"range"`
-	Attacks  string `json:"attacks"`
-	Skill    string `json:"skill"`
-	Strength string `json:"strength"`
-	AP       string `json:"ap"`
-	Damage   string `json:"damage"`
+	Name      string   `json:"name"`
+	Range     string   `json:"range"`
+	Attacks   string   `json:"attacks"`
+	Skill     string   `json:"skill"`
+	Strength  string   `json:"strength"`
+	AP        string   `json:"ap"`
+	Damage    string   `json:"damage"`
+	Abilities []string `json:"abilities"`
 }
 
 type Stats struct {
