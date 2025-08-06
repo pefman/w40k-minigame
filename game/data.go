@@ -23,11 +23,16 @@ type Stats struct {
 	SV   string `json:"sv"`
 }
 
+type Keyword struct {
+	Words []string `json:"words"`
+}
+
 type Unit struct {
-	FactionName string   `json:"factionname"`
-	UnitName    string   `json:"unitname"`
-	Stats       []Stats  `json:"stats"`
-	Weapons     []Weapon `json:"weapons"`
+	FactionName string    `json:"factionname"`
+	UnitName    string    `json:"unitname"`
+	Stats       []Stats   `json:"stats"`
+	Weapons     []Weapon  `json:"weapons"`
+	Keywords    []Keyword `json:"keywords"` // <-- Added this
 }
 
 func LoadUnitsFromFile(path string) ([]Unit, error) {

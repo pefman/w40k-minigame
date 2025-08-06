@@ -99,7 +99,7 @@
   <select id="attackerUnit"></select>
 
   <label for="attackerWeapons">Attacker Weapons:</label>
-  <select id="attackerWeapons" multiple></select>
+  <select id="attackerWeapons" multiple class="weapon-select"></select>
 
   <label for="defenderFaction">Defender Faction:</label>
   <select id="defenderFaction"></select>
@@ -108,7 +108,7 @@
   <select id="defenderUnit"></select>
 
   <label for="defenderWeapons">Defender Weapons:</label>
-  <select id="defenderWeapons" multiple></select>
+  <select id="defenderWeapons" multiple class="weapon-select"></select>
 
   <button id="startBtn">⚔️ Simulate Full Battle</button>
 
@@ -194,45 +194,50 @@
         const strength = w.strength ?? "?";
         const ap = w.ap ?? "?";
         const name = w.name ?? "Unknown Weapon";
+        const range = w.range ?? "?";
+        const attacks = w.attacks ?? "?";
+        const damage = w.damage ?? "?";
+        const skill = w.skill ?? "?";
         opt.value = name;
-        opt.textContent = `${name} (S: ${strength} / AP: ${ap})`;
+        opt.textContent = `${name} (${range}) [S:${strength} AP:${ap} Att:${attacks} Dmg:${damage} Skill:${skill}]`;
         weaponsSelect.appendChild(opt);
       });
     }
 
-async function updateWeaponsOnUnitChange(unitId, weaponsId) {
-  const factionValue = normalize(document.getElementById(unitId.replace('Unit', 'Faction')).value);
-  const unitName = document.getElementById(unitId).value;
-  const units = await fetchUnits(factionValue);
+    async function updateWeaponsOnUnitChange(unitId, weaponsId) {
+      const factionValue = normalize(document.getElementById(unitId.replace('Unit', 'Faction')).value);
+      const unitName = document.getElementById(unitId).value;
+      const units = await fetchUnits(factionValue);
 
-  const weaponsSelect = document.getElementById(weaponsId);
-  weaponsSelect.innerHTML = "";
+      const weaponsSelect = document.getElementById(weaponsId);
+      weaponsSelect.innerHTML = "";
 
-  const unit = units.find(u => u.name === unitName);
-  if (!unit) return;
+      const unit = units.find(u => u.name === unitName);
+      if (!unit) return;
 
-  let weapons = unit.weapons || [];
-  weapons.sort((a, b) => {
-    const rangeA = (a.range || "").toLowerCase();
-    const rangeB = (b.range || "").toLowerCase();
-    if (rangeA === "melee" && rangeB !== "melee") return 1;
-    if (rangeA !== "melee" && rangeB === "melee") return -1;
-    return 0;
-  });
+      let weapons = unit.weapons || [];
+      weapons.sort((a, b) => {
+        const rangeA = (a.range || "").toLowerCase();
+        const rangeB = (b.range || "").toLowerCase();
+        if (rangeA === "melee" && rangeB !== "melee") return 1;
+        if (rangeA !== "melee" && rangeB === "melee") return -1;
+        return 0;
+      });
 
-weapons.forEach(w => {
-  const opt = document.createElement("option");
-  const strength = w.strength ?? "?";
-  const ap = w.ap ?? "?";
-  const name = w.name ?? "Unknown Weapon";
-  const rangeType = w.range ?? "?";
-  opt.value = name;
-  opt.textContent = `${name} (${rangeType}) (S: ${strength} / AP: ${ap})`;
-  weaponsSelect.appendChild(opt);
-});
-
-}
-
+      weapons.forEach(w => {
+        const opt = document.createElement("option");
+        const strength = w.strength ?? "?";
+        const ap = w.ap ?? "?";
+        const name = w.name ?? "Unknown Weapon";
+        const range = w.range ?? "?";
+        const attacks = w.attacks ?? "?";
+        const damage = w.damage ?? "?";
+        const skill = w.skill ?? "?";
+        opt.value = name;
+        opt.textContent = `${name} (${range}) [S:${strength} AP:${ap} Att:${attacks} Dmg:${damage} Skill:${skill}]`;
+        weaponsSelect.appendChild(opt);
+      });
+    }
 
     async function startBattle() {
       const attacker = document.getElementById("attackerUnit").value;
