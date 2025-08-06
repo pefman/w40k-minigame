@@ -15,6 +15,9 @@ var units []game.Unit
 var battleCounter int
 
 func main() {
+
+	log.Println("App started")
+
 	var err error
 	units, err = game.LoadUnitsFromFile("static/wh40k_10th.json")
 	if err != nil {
