@@ -2,30 +2,18 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
-	"time"
 	"w40k-minigame/game"
 )
 
 var units []game.Unit
 var battleCounter int
-
-func logMemoryUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	log.Printf("Memory Usage: Alloc = %v MiB, TotalAlloc = %v MiB, Sys = %v MiB, NumGC = %v\n",
-		bToMb(m.Alloc), bToMb(m.TotalAlloc), bToMb(m.Sys), m.NumGC)
-}
-
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
-}
 
 func main() {
 	var err error
@@ -33,17 +21,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load data: %v", err)
 	}
-
-	log.Println("🚀 W40K Minigame server starting...")
-	log.Printf("Loaded %d units from JSON\n", len(units))
-
-	// Start memory usage logger ticker
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		for range ticker.C {
-			logMemoryUsage()
-		}
-	}()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/static/", http.StatusFound)
@@ -54,6 +31,7 @@ func main() {
 	http.HandleFunc("/battle", handleBattle)
 	http.HandleFunc("/version", handleVersion)
 
+	// SPA static handler
 	http.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/static/")
 		filePath := filepath.Join("static", filepath.Clean(path))
@@ -67,7 +45,7 @@ func main() {
 	})
 
 	port := "8080"
-	log.Printf("🌐 Server listening on http://localhost:%s\n", port)
+	fmt.Printf("\n🌐 Server listening on http://localhost:%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
 
@@ -121,8 +99,10 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 	type BattleRequest struct {
 		Attacker        string   `json:"attacker"`
 		AttackerWeapons []string `json:"attackerWeapons"`
+		AttackerCount   int      `json:"attackerCount"`
 		Defender        string   `json:"defender"`
 		DefenderWeapons []string `json:"defenderWeapons"`
+		DefenderCount   int      `json:"defenderCount"`
 	}
 	var req BattleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -164,9 +144,19 @@ func handleBattle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result := game.SimulateBattleMultipleWeapons(atk, atkWeapons, def, defWeapons)
+	attackerCount := req.AttackerCount
+	if attackerCount < 1 {
+		attackerCount = 1
+	}
+	defenderCount := req.DefenderCount
+	if defenderCount < 1 {
+		defenderCount = 1
+	}
+
+	result := game.SimulateBattleGroups(atk, atkWeapons, attackerCount, def, defWeapons, defenderCount)
+
 	battleCounter++
-	log.Printf("⚔️  Battle #%d simulated: %s vs %s", battleCounter, atk.UnitName, def.UnitName)
+	log.Printf("⚔️  Battle #%d simulated: %s vs %s (Counts: %d vs %d)", battleCounter, atk.UnitName, def.UnitName, attackerCount, defenderCount)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{

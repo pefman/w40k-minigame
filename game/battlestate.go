@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// BattleResult holds the result and log of a battle simulation
+// BattleResult holds battle summary and log
 type BattleResult struct {
 	Log    string
 	Winner string
@@ -17,32 +17,20 @@ type BattleResult struct {
 	Draw   bool
 }
 
-// SimulateBattleMultipleWeapons simulates a battle where both attacker and defender
-// can use multiple weapons. It supports abilities like BLAST, SUSTAINED HITS, DEVASTATING WOUNDS, etc.
-func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defender Unit, defenderWeapons []Weapon) BattleResult {
+// SimulateBattleGroups simulates battle between groups of units with multiple weapons
+func SimulateBattleGroups(
+	attacker Unit, attackerWeapons []Weapon, attackerCount int,
+	defender Unit, defenderWeapons []Weapon, defenderCount int,
+) BattleResult {
 	rand.Seed(time.Now().UnixNano())
 
-	wA, _ := strconv.Atoi(attacker.Stats[0].W)
-	wD, _ := strconv.Atoi(defender.Stats[0].W)
+	attackerWounds := attackerCount * atoi(attacker.Stats[0].W)
+	defenderWounds := defenderCount * atoi(defender.Stats[0].W)
 
 	log := &strings.Builder{}
-	fmt.Fprintf(log, "💥 Battle starts: %s vs %s\n\n", attacker.UnitName, defender.UnitName)
+	fmt.Fprintf(log, "💥 Battle starts: %d x %s vs %d x %s\n\n",
+		attackerCount, attacker.UnitName, defenderCount, defender.UnitName)
 
-	defIsVehicle := false
-	for _, kw := range defender.Keywords {
-		for _, w := range kw.Words {
-			if strings.EqualFold(w, "Vehicle") {
-				defIsVehicle = true
-				break
-			}
-		}
-		if defIsVehicle {
-			break
-		}
-	}
-
-	attackerWounds := wA
-	defenderWounds := wD
 	defenderTough := defender.Stats[0].T
 	attackerTough := attacker.Stats[0].T
 
@@ -50,23 +38,21 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 	for attackerWounds > 0 && defenderWounds > 0 {
 		fmt.Fprintf(log, "🔁 Round %d\n\n", round)
 
-		attackWithWeapons := func(weapons []Weapon, defenderWounds *int, defenderTough string, attackerName, defenderName string) {
+		attackWithWeapons := func(weapons []Weapon, defenderWounds *int, defenderTough string, attackerName, defenderName string, unitCount int) {
 			for _, weapon := range weapons {
 				if *defenderWounds <= 0 {
-					break // Stop if defender already slain
+					break
 				}
 
-				attacks := parseDice(weapon.Attacks)
+				attacks := parseDice(weapon.Attacks) * unitCount
 
-				// HEAVY reduces melee attacks by 1 if attacks > 1
 				if hasAbility(weapon.Abilities, "HEAVY") && strings.EqualFold(weapon.Range, "melee") {
-					if attacks > 1 {
-						attacks--
-						fmt.Fprintf(log, "  (HEAVY ability active: attacks reduced by 1 to %d)\n", attacks)
+					if attacks > unitCount {
+						attacks -= unitCount
+						fmt.Fprintf(log, "  (HEAVY ability active: attacks reduced by %d to %d)\n", unitCount, attacks)
 					}
 				}
 
-				// BLAST triples attacks
 				if hasAbility(weapon.Abilities, "BLAST") {
 					attacks *= 3
 					fmt.Fprintf(log, "  (BLAST ability active: attacks tripled to %d)\n", attacks)
@@ -78,7 +64,6 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 				damage := 0
 				mortalWounds := 0
 
-				// Parse ANTI-VEHICLE threshold and bonus damage
 				antiVehicleThreshold, antiVehicleBonus := parseAntiVehicleBonus(weapon.Abilities)
 
 				fmt.Fprintf(log, "💥 %s attacks %s with %s\n", attackerName, defenderName, weapon.Name)
@@ -105,43 +90,12 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 						if rollWoundVerbose(weapon.Strength, defenderTough, log, i+1) {
 							wounds++
 
-							// Detailed damage roll logging:
-							diceRoll := 0
-							modifier := 0
-
-							s := strings.ToUpper(strings.ReplaceAll(weapon.Damage, " ", ""))
-							re := regexp.MustCompile(`(?i)(\d*)D(\d+)([+\-]\d+)?`)
-							matches := re.FindStringSubmatch(s)
-
-							if len(matches) > 0 {
-								countStr := matches[1]
-								if countStr == "" {
-									countStr = "1"
-								}
-								count, _ := strconv.Atoi(countStr)
-								dieSize, _ := strconv.Atoi(matches[2])
-								if matches[3] != "" {
-									modifier, _ = strconv.Atoi(matches[3])
-								}
-
-								diceRoll = 0
-								for di := 0; di < count; di++ {
-									roll := rand.Intn(dieSize) + 1
-									diceRoll += roll
-									fmt.Fprintf(log, "      🎲 Damage dice roll %d: %d\n", di+1, roll)
-								}
-							} else {
-								n, err := strconv.Atoi(s)
-								if err != nil {
-									diceRoll = 1
-								} else {
-									diceRoll = n
-								}
-							}
+							diceRoll, modifier := rollDamageDice(weapon.Damage, log)
 
 							totalDamage := diceRoll + modifier
 
-							// Add ANTI-VEHICLE bonus damage if applicable
+							defIsVehicle := isUnitVehicle(defender)
+
 							if defIsVehicle && antiVehicleThreshold > 0 {
 								weaponStrength, _ := strconv.Atoi(weapon.Strength)
 								if weaponStrength >= antiVehicleThreshold {
@@ -201,12 +155,12 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 			}
 		}
 
-		attackWithWeapons(attackerWeapons, &defenderWounds, defenderTough, attacker.UnitName, defender.UnitName)
+		attackWithWeapons(attackerWeapons, &defenderWounds, defenderTough, attacker.UnitName, defender.UnitName, attackerCount)
 		if defenderWounds <= 0 {
 			break
 		}
 
-		attackWithWeapons(defenderWeapons, &attackerWounds, attackerTough, defender.UnitName, attacker.UnitName)
+		attackWithWeapons(defenderWeapons, &attackerWounds, attackerTough, defender.UnitName, attacker.UnitName, defenderCount)
 		if attackerWounds <= 0 {
 			break
 		}
@@ -219,17 +173,17 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 	var draw bool
 	if attackerWounds <= 0 && defenderWounds <= 0 {
 		draw = true
-		fmt.Fprintf(log, "☠️ Both units are slain in mutual destruction!\n")
+		fmt.Fprintf(log, "☠️ Both sides wiped out in mutual destruction!\n")
 	} else if attackerWounds <= 0 {
 		winner = defender.UnitName
 		loser = attacker.UnitName
-		fmt.Fprintf(log, "🏁 %s is slain! %s wins!\n", attacker.UnitName, defender.UnitName)
+		fmt.Fprintf(log, "🏁 %s wiped out! %s wins!\n", attacker.UnitName, defender.UnitName)
 	} else if defenderWounds <= 0 {
 		winner = attacker.UnitName
 		loser = defender.UnitName
-		fmt.Fprintf(log, "🏁 %s is slain! %s wins!\n", defender.UnitName, attacker.UnitName)
+		fmt.Fprintf(log, "🏁 %s wiped out! %s wins!\n", defender.UnitName, attacker.UnitName)
 	} else {
-		fmt.Fprintf(log, "⚔️ Both units survive the exchange.\n")
+		fmt.Fprintf(log, "⚔️ Both sides still have units alive after the battle.\n")
 	}
 
 	return BattleResult{
@@ -240,115 +194,63 @@ func SimulateBattleMultipleWeapons(attacker Unit, attackerWeapons []Weapon, defe
 	}
 }
 
-// parseAntiVehicleBonus extracts threshold and bonus damage from "ANTI-VEHICLE X+" abilities
-func parseAntiVehicleBonus(abilities []string) (threshold int, bonusDamage int) {
-	for _, ab := range abilities {
-		if strings.HasPrefix(strings.ToUpper(ab), "ANTI-VEHICLE") {
-			parts := strings.Fields(ab)
-			if len(parts) == 2 {
-				thresholdStr := strings.TrimSuffix(parts[1], "+")
-				n, err := strconv.Atoi(thresholdStr)
-				if err == nil {
-					// Assume bonus damage equals threshold number (typical)
-					return n, n
-				}
-			}
+// rollDamageDice parses damage string and logs each damage dice roll
+func rollDamageDice(damageStr string, log *strings.Builder) (int, int) {
+	diceRoll := 0
+	modifier := 0
+
+	s := strings.ToUpper(strings.ReplaceAll(damageStr, " ", ""))
+	re := regexp.MustCompile(`(?i)(\d*)D(\d+)([+\-]\d+)?`)
+	matches := re.FindStringSubmatch(s)
+
+	if len(matches) > 0 {
+		countStr := matches[1]
+		if countStr == "" {
+			countStr = "1"
+		}
+		count, _ := strconv.Atoi(countStr)
+		dieSize, _ := strconv.Atoi(matches[2])
+		if matches[3] != "" {
+			modifier, _ = strconv.Atoi(matches[3])
+		}
+
+		for di := 0; di < count; di++ {
+			roll := rand.Intn(dieSize) + 1
+			diceRoll += roll
+			fmt.Fprintf(log, "      🎲 Damage dice roll %d: %d\n", di+1, roll)
+		}
+	} else {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			diceRoll = 1
+		} else {
+			diceRoll = n
 		}
 	}
-	return 0, 0
+
+	return diceRoll, modifier
 }
 
-// Helper functions below...
-
-func hasAbility(abilities []string, ability string) bool {
-	for _, ab := range abilities {
-		if strings.Contains(strings.ToUpper(ab), ability) {
-			return true
+// isUnitVehicle checks if unit has "Vehicle" keyword
+func isUnitVehicle(u Unit) bool {
+	for _, kw := range u.Keywords {
+		for _, w := range kw.Words {
+			if strings.EqualFold(w, "Vehicle") {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func parseSustainedHits(abilities []string) int {
-	for _, ab := range abilities {
-		if strings.HasPrefix(strings.ToUpper(ab), "SUSTAINED HITS") {
-			parts := strings.Fields(ab)
-			if len(parts) == 3 {
-				n, err := strconv.Atoi(parts[2])
-				if err == nil {
-					return n
-				}
-			}
-		}
-	}
-	return 0
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
-func parseMortalWounds(abilities []string) int {
-	for _, ab := range abilities {
-		if strings.HasPrefix(strings.ToUpper(ab), "MORTAL WOUNDS") {
-			parts := strings.Fields(ab)
-			if len(parts) == 3 {
-				n, err := strconv.Atoi(parts[2])
-				if err == nil {
-					return n
-				}
-			}
-		}
-	}
-	return 0
-}
-
-func parseAntiVehicleThreshold(abilities []string) int {
-	for _, ab := range abilities {
-		if strings.HasPrefix(strings.ToUpper(ab), "ANTI-VEHICLE") {
-			parts := strings.Fields(ab)
-			if len(parts) == 2 {
-				thresholdStr := strings.TrimSuffix(parts[1], "+")
-				n, err := strconv.Atoi(thresholdStr)
-				if err == nil {
-					return n
-				}
-			}
-		}
-	}
-	return 0
-}
-
-func rollDiceWithReroll(needed int, rerollOnes bool) int {
-	roll := rand.Intn(6) + 1
-	if rerollOnes && roll == 1 {
-		roll = rand.Intn(6) + 1
-	}
-	return roll
-}
-
-func rollWoundVerbose(strStr string, tghStr string, log *strings.Builder, index int) bool {
-	s, _ := strconv.Atoi(strStr)
-	t, _ := strconv.Atoi(tghStr)
-	roll := rand.Intn(6) + 1
-
-	var needed int
-	switch {
-	case s >= t*2:
-		needed = 2
-	case s > t:
-		needed = 3
-	case s == t:
-		needed = 4
-	case s*2 <= t:
-		needed = 6
-	default:
-		needed = 5
-	}
-
-	fmt.Fprintf(log, "      🎲 Wound Roll %d: %d vs Toughness %d (need %d+)\n", index, roll, t, needed)
-	return roll >= needed
-}
-
+// parseDice parses dice notation like "D6", "2D6+1", or just integer strings
 func parseDice(s string) int {
 	s = strings.ToUpper(strings.ReplaceAll(s, " ", ""))
-
 	re := regexp.MustCompile(`(?i)(\d*)D(\d+)([+\-]\d+)?`)
 	matches := re.FindStringSubmatch(s)
 	if len(matches) > 0 {
@@ -373,7 +275,7 @@ func parseDice(s string) int {
 		}
 		return total
 	}
-
+	// fallback to int
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		return 1
@@ -381,8 +283,102 @@ func parseDice(s string) int {
 	return n
 }
 
+// hasAbility checks if ability string slice contains the specified ability (case-insensitive)
+func hasAbility(abilities []string, ability string) bool {
+	ability = strings.ToUpper(ability)
+	for _, ab := range abilities {
+		if strings.Contains(strings.ToUpper(ab), ability) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseSkill converts skill string like "2+" into int 2
 func parseSkill(s string) int {
 	s = strings.Trim(s, "+")
 	n, _ := strconv.Atoi(s)
 	return n
+}
+
+// parseAntiVehicleBonus parses "ANTI-VEHICLE X+" returns threshold and bonus damage (usually X)
+func parseAntiVehicleBonus(abilities []string) (threshold int, bonus int) {
+	for _, ab := range abilities {
+		if strings.HasPrefix(strings.ToUpper(ab), "ANTI-VEHICLE") {
+			parts := strings.Fields(ab)
+			if len(parts) == 2 {
+				thresholdStr := strings.TrimSuffix(parts[1], "+")
+				n, err := strconv.Atoi(thresholdStr)
+				if err == nil {
+					return n, n
+				}
+			}
+		}
+	}
+	return 0, 0
+}
+
+// parseSustainedHits parses "SUSTAINED HITS X"
+func parseSustainedHits(abilities []string) int {
+	for _, ab := range abilities {
+		if strings.HasPrefix(strings.ToUpper(ab), "SUSTAINED HITS") {
+			parts := strings.Fields(ab)
+			if len(parts) == 3 {
+				n, err := strconv.Atoi(parts[2])
+				if err == nil {
+					return n
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// parseMortalWounds parses "MORTAL WOUNDS X"
+func parseMortalWounds(abilities []string) int {
+	for _, ab := range abilities {
+		if strings.HasPrefix(strings.ToUpper(ab), "MORTAL WOUNDS") {
+			parts := strings.Fields(ab)
+			if len(parts) == 3 {
+				n, err := strconv.Atoi(parts[2])
+				if err == nil {
+					return n
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// rollDiceWithReroll rolls a d6, rerolls 1s if rerollOnes true
+func rollDiceWithReroll(needed int, rerollOnes bool) int {
+	roll := rand.Intn(6) + 1
+	if rerollOnes && roll == 1 {
+		roll = rand.Intn(6) + 1
+	}
+	return roll
+}
+
+// rollWoundVerbose rolls wound dice and logs detailed info, returns success/failure
+func rollWoundVerbose(strStr string, tghStr string, log *strings.Builder, index int) bool {
+	s, _ := strconv.Atoi(strStr)
+	t, _ := strconv.Atoi(tghStr)
+	roll := rand.Intn(6) + 1
+
+	var needed int
+	switch {
+	case s >= t*2:
+		needed = 2
+	case s > t:
+		needed = 3
+	case s == t:
+		needed = 4
+	case s*2 <= t:
+		needed = 6
+	default:
+		needed = 5
+	}
+
+	fmt.Fprintf(log, "      🎲 Wound Roll %d: %d vs Toughness %d (need %d+)\n", index, roll, t, needed)
+	return roll >= needed
 }
